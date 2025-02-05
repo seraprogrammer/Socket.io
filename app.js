@@ -10,12 +10,12 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"]
   },
-  perMessageDeflate: true,
-  httpCompression: true,
+  perMessageDeflate: false, // Disable compression for low-latency
+  httpCompression: false,
   maxHttpBufferSize: 1e6, // 1MB
-  pingInterval: 10000,
-  pingTimeout: 5000,
-  transports: ['polling', 'websocket'],
+  pingInterval: 5000, // Faster pings for better responsiveness
+  pingTimeout: 2500,
+  transports: ['websocket'], // Enforce WebSocket only
   allowUpgrades: true,
   upgradeTimeout: 10000,
   cookie: false
@@ -102,12 +102,12 @@ io.on("connection", (socket) => {
 
   // Optimize room broadcasts
   socket.on("editorContent", (data) => {
-    socket.volatile.to(data.room).emit("editorContent", data);
+    socket.broadcast.to(data.room).emit("editorContent", data.text);
   });
   
   // Handle output updates
   socket.on("outputUpdate", ({ room, content }) => {
-    socket.to(room).emit("outputUpdate", { content });
+    socket.broadcast.to(room).emit("outputUpdate", content);
   });
 
   // Handle disconnect
