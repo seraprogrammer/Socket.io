@@ -7,55 +7,76 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-const users = {}; // Store connected users
+const rooms = new Map(); // Store room information
 
 io.on("connection", (socket) => {
   console.log(`🔗 User connected: ${socket.id}`);
 
-  // Store user info
-  socket.on("join", (username) => {
-    users[socket.id] = username;
-    console.log(`👤 ${username} joined as ${socket.id}`);
-    io.emit("updateUsers", Object.values(users)); // Update users list
+  // Handle joining a room
+  socket.on("joinRoom", (roomId) => {
+    console.log(`User ${socket.id} joining room ${roomId}`);
+    socket.join(roomId);
+    
+    // Initialize room if it doesn't exist
+    if (!rooms.has(roomId)) {
+      rooms.set(roomId, new Set());
+    }
+    rooms.get(roomId).add(socket.id);
+
+    // Notify others in the room
+    socket.to(roomId).emit("userJoined", socket.id);
+    
+    // Send current users in the room
+    const roomUsers = Array.from(rooms.get(roomId));
+    io.to(roomId).emit("updateUsers", roomUsers);
   });
 
-  // Handle WebRTC offer
-  socket.on("offer", (data) => {
-    console.log(`📡 Offer sent from ${socket.id} to ${data.target}`);
-    socket
-      .to(data.target)
-      .emit("offer", { sender: socket.id, offer: data.offer });
+  // Handle leaving a room
+  socket.on("leaveRoom", (roomId) => {
+    console.log(`User ${socket.id} leaving room ${roomId}`);
+    handleLeaveRoom(socket, roomId);
   });
 
-  // Handle WebRTC answer
-  socket.on("answer", (data) => {
-    console.log(`✅ Answer sent from ${socket.id} to ${data.target}`);
-    socket
-      .to(data.target)
-      .emit("answer", { sender: socket.id, answer: data.answer });
+  // Handle editor content updates
+  socket.on("editorContent", ({ room, content }) => {
+    socket.to(room).emit("editorContent", { content });
   });
 
-  // Handle ICE candidates
-  socket.on("ice-candidate", (data) => {
-    console.log(`❄️ ICE Candidate from ${socket.id} to ${data.target}`);
-    socket
-      .to(data.target)
-      .emit("ice-candidate", { sender: socket.id, candidate: data.candidate });
-  });
-
-  // Handle real-time chat messages
-  socket.on("message", (data) => {
-    console.log(`💬 ${users[socket.id]}: ${data.message}`);
-    io.emit("message", { sender: users[socket.id], message: data.message });
+  // Handle output updates
+  socket.on("outputUpdate", ({ room, content }) => {
+    socket.to(room).emit("outputUpdate", { content });
   });
 
   // Handle disconnect
   socket.on("disconnect", () => {
-    console.log(`❌ User disconnected: ${users[socket.id] || socket.id}`);
-    delete users[socket.id];
-    io.emit("updateUsers", Object.values(users));
+    console.log(`❌ User disconnected: ${socket.id}`);
+    // Clean up all rooms this socket was in
+    rooms.forEach((users, roomId) => {
+      if (users.has(socket.id)) {
+        handleLeaveRoom(socket, roomId);
+      }
+    });
   });
 });
+
+function handleLeaveRoom(socket, roomId) {
+  if (rooms.has(roomId)) {
+    rooms.get(roomId).delete(socket.id);
+    socket.leave(roomId);
+    
+    // Notify others that user left
+    socket.to(roomId).emit("userLeft", socket.id);
+    
+    // If room is empty, delete it
+    if (rooms.get(roomId).size === 0) {
+      rooms.delete(roomId);
+    } else {
+      // Update user list for remaining users
+      const roomUsers = Array.from(rooms.get(roomId));
+      io.to(roomId).emit("updateUsers", roomUsers);
+    }
+  }
+}
 
 // Start the server
 const PORT = process.env.PORT || 3000;
