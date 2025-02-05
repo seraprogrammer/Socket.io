@@ -5,10 +5,25 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  perMessageDeflate: true,
+  httpCompression: true,
+  maxHttpBufferSize: 1e6, // 1MB
+  pingInterval: 10000,
+  pingTimeout: 5000,
+  transports: ['polling', 'websocket'],
+  allowUpgrades: true,
+  upgradeTimeout: 10000,
+  cookie: false
+});
 
 const rooms = new Map(); // Store room information
 
+// Optimize room broadcasts
 io.on("connection", (socket) => {
   console.log(`🔗 User connected: ${socket.id}`);
 
@@ -85,11 +100,11 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Handle editor content updates
-  socket.on("editorContent", ({ room, content }) => {
-    socket.to(room).emit("editorContent", { content });
+  // Optimize room broadcasts
+  socket.on("editorContent", (data) => {
+    socket.volatile.to(data.room).emit("editorContent", data);
   });
-
+  
   // Handle output updates
   socket.on("outputUpdate", ({ room, content }) => {
     socket.to(room).emit("outputUpdate", { content });
@@ -98,7 +113,6 @@ io.on("connection", (socket) => {
   // Handle disconnect
   socket.on("disconnect", () => {
     console.log(`❌ User disconnected: ${socket.id}`);
-    // Clean up all rooms this socket was in
     rooms.forEach((users, roomId) => {
       if (users.has(socket.id)) {
         handleLeaveRoom(socket, roomId);
