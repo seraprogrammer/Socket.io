@@ -62,7 +62,7 @@ io.on("connection", (socket) => {
   // Send chat history when user connects
   fetchChatHistory(socket);
 
-  // Handle message sending
+  // Handle message sending from client
   socket.on("sendMessage", async (data) => {
     try {
       const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
