@@ -11,9 +11,8 @@ const port = 3000;
 const token = process.env.DISCORD_TOKEN; // Bot token from .env file
 const channelId = process.env.CHANNEL_ID; // Voice channel ID from .env file
 
-// Set up CORS middleware to allow requests from specific origins
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://www.w3schools.com',  // Set allowed frontend URL
+  origin: '*',  // This will allow any origin to make requests
 }));
 
 // Initialize Discord Client
