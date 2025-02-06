@@ -27,6 +27,7 @@ const GLOBAL_CHAT_CHANNEL_ID = process.env.CHANNEL_ID;
 // Fetch messages from Discord when a user connects
 async function fetchChatHistory(socket) {
   try {
+    console.log("Fetching chat history...");
     const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 20 });
 
@@ -35,6 +36,7 @@ async function fetchChatHistory(socket) {
       content: msg.content,
     })).reverse(); // Show oldest first
 
+    console.log("Chat history fetched, sending to client...");
     socket.emit("chatHistory", chatHistory);
   } catch (error) {
     console.error("Error fetching messages:", error);
@@ -45,6 +47,7 @@ async function fetchChatHistory(socket) {
 // Listen for messages from Discord
 client.on("messageCreate", (message) => {
   if (message.channel.id === GLOBAL_CHAT_CHANNEL_ID && !message.author.bot) {
+    console.log("New message received, emitting to clients:", message.content);
     io.emit("newMessage", {
       username: message.author.username,
       content: message.content,
