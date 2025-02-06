@@ -17,12 +17,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // Read messages
+    GatewayIntentBits.MessageContent, // Required for reading messages
   ],
-});
-
-client.once("ready", () => {
-  console.log(`✅ Bot logged in as ${client.user.tag}`);
 });
 
 // Define the global chat room channel
@@ -42,6 +38,7 @@ async function fetchChatHistory(socket) {
     socket.emit("chatHistory", chatHistory);
   } catch (error) {
     console.error("Error fetching messages:", error);
+    socket.emit("error", "Failed to fetch chat history.");
   }
 }
 
@@ -64,9 +61,14 @@ io.on("connection", (socket) => {
 
   // Handle message sending
   socket.on("sendMessage", async (data) => {
-    const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
-    if (channel) {
-      channel.send(`${data.username}: ${data.message}`);
+    try {
+      const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
+      if (channel) {
+        await channel.send(`${data.username}: ${data.message}`);
+      }
+    } catch (error) {
+      console.error("Error sending message to Discord:", error);
+      socket.emit("error", "Failed to send the message to Discord.");
     }
   });
 
