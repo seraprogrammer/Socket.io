@@ -1,19 +1,70 @@
-const express = require('express');
+require('dotenv').config(); // Load environment variables from .env file
+
+const { Client, GatewayIntentBits } = require("discord.js");
+const { joinVoiceChannel, getVoiceConnection } = require("@discordjs/voice");
+const express = require("express");
 const app = express();
 const port = 3000;
 
-app.get('/join', (req, res) => {
-  // Trigger the bot to join a voice channel
-  client.emit('messageCreate', { content: '!join', member: { voice: { channel: { id: 'CHANNEL_ID' } } } });
-  res.json({ status: 'joined' });
+// Use environment variables from .env file
+const token = process.env.DISCORD_TOKEN; // Bot token from .env file
+const channelId = process.env.CHANNEL_ID; // Voice channel ID from .env file
+
+// Initialize Discord Client
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates, // Required for interacting with voice channels
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
-app.get('/leave', (req, res) => {
-  // Trigger the bot to leave the voice channel
-  client.emit('messageCreate', { content: '!leave', member: { voice: { channel: { id: 'CHANNEL_ID' } } } });
-  res.json({ status: 'left' });
+client.once("ready", () => {
+  console.log(`Logged in as ${client.user.tag}!`);
 });
 
+// Endpoint to make the bot join a voice channel
+app.get("/join", (req, res) => {
+  if (client.isReady()) {
+    const channel = client.channels.cache.get(channelId);
+
+    if (channel && channel.isVoice()) {
+      joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator,
+      });
+
+      res.json({ status: "joined", channel: channelId });
+    } else {
+      res.status(400).json({ error: "Invalid voice channel ID" });
+    }
+  } else {
+    res.status(400).json({ error: "Bot is not logged in or ready" });
+  }
+});
+
+// Endpoint to make the bot leave a voice channel
+app.get("/leave", (req, res) => {
+  if (client.isReady()) {
+    const connection = getVoiceConnection(channelId);
+
+    if (connection) {
+      connection.destroy();
+      res.json({ status: "left", channel: channelId });
+    } else {
+      res.status(400).json({ error: "Bot is not in a voice channel" });
+    }
+  } else {
+    res.status(400).json({ error: "Bot is not logged in or ready" });
+  }
+});
+
+// Start the Express server
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 });
+
+// Log the bot in with the bot token
+client.login(token);
