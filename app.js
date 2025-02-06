@@ -25,20 +25,46 @@ client.once("ready", () => {
   console.log(`✅ Bot logged in as ${client.user.tag}`);
 });
 
+// Define the global chat room channel
+const GLOBAL_CHAT_CHANNEL_ID = process.env.CHANNEL_ID;
+
+// Fetch messages from Discord when a user connects
+async function fetchChatHistory(socket) {
+  try {
+    const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
+    const messages = await channel.messages.fetch({ limit: 20 });
+
+    const chatHistory = messages.map((msg) => ({
+      username: msg.author.username,
+      content: msg.content,
+    })).reverse(); // Show oldest first
+
+    socket.emit("chatHistory", chatHistory);
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+  }
+}
+
 // Listen for messages from Discord
 client.on("messageCreate", (message) => {
-  if (!message.author.bot) {
-    console.log(`📩 New message: ${message.content}`);
-    io.emit("newMessage", { username: message.author.username, content: message.content });
+  if (message.channel.id === GLOBAL_CHAT_CHANNEL_ID && !message.author.bot) {
+    io.emit("newMessage", {
+      username: message.author.username,
+      content: message.content,
+    });
   }
 });
 
-// Listen for messages from the client and send them to Discord
+// Handle socket.io connections
 io.on("connection", (socket) => {
   console.log("🟢 New Client Connected");
 
+  // Send chat history when user connects
+  fetchChatHistory(socket);
+
+  // Handle message sending
   socket.on("sendMessage", async (data) => {
-    const channel = await client.channels.fetch(process.env.CHANNEL_ID);
+    const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
     if (channel) {
       channel.send(`${data.username}: ${data.message}`);
     }
@@ -51,14 +77,12 @@ io.on("connection", (socket) => {
 
 // API Route for health check
 app.get("/", (req, res) => {
-  res.send("✅ Discord Bot Server is running!");
+  res.send("✅ Discord Global Chat Server is running!");
 });
 
 // Start Server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  await client.login(process.env.DISCORD_TOKEN);
 });
-
-// Login Discord Bot
-client.login(process.env.DISCORD_TOKEN);
