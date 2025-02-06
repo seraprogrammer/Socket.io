@@ -3,12 +3,18 @@ require('dotenv').config(); // Load environment variables from .env file
 const { Client, GatewayIntentBits } = require("discord.js");
 const { joinVoiceChannel, getVoiceConnection } = require("@discordjs/voice");
 const express = require("express");
+const cors = require("cors");
 const app = express();
 const port = 3000;
 
 // Use environment variables from .env file
 const token = process.env.DISCORD_TOKEN; // Bot token from .env file
 const channelId = process.env.CHANNEL_ID; // Voice channel ID from .env file
+
+// Set up CORS middleware to allow requests from specific origins
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'https://www.w3schools.com',  // Set allowed frontend URL
+}));
 
 // Initialize Discord Client
 const client = new Client({
