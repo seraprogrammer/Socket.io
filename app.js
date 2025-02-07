@@ -1,93 +1,107 @@
 require("dotenv").config();
 const express = require("express");
-const { Client, GatewayIntentBits } = require("discord.js");
-const { Server } = require("socket.io");
-const http = require("http");
-const cors = require("cors");
+const { AuthorizationCode } = require("simple-oauth2");
+const crypto = require("crypto");
 
-// Initialize Express App
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
 
-app.use(cors());
+const CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
+const CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
+const REDIRECT_URI =
+  process.env.LINKEDIN_REDIRECT_URI || "http://localhost:3000/callback";
 
-// Create Discord Bot
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // Required for reading messages
-  ],
-});
-
-// Define the global chat room channel
-const GLOBAL_CHAT_CHANNEL_ID = process.env.CHANNEL_ID;
-
-// Fetch messages from Discord when a user connects
-async function fetchChatHistory(socket) {
-  try {
-    console.log("Fetching chat history...");
-    const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
-    const messages = await channel.messages.fetch({ limit: 20 });
-
-    const chatHistory = messages.map((msg) => ({
-      username: msg.author.username,
-      content: msg.content,
-    })).reverse(); // Show oldest first
-
-    console.log("Chat history fetched, sending to client...");
-    socket.emit("chatHistory", chatHistory);
-  } catch (error) {
-    console.error("Error fetching messages:", error);
-    socket.emit("error", "Failed to fetch chat history.");
-  }
+if (!CLIENT_ID || !CLIENT_SECRET) {
+  console.error("Missing CLIENT_ID or CLIENT_SECRET in .env file.");
+  process.exit(1);
 }
 
-// Listen for messages from Discord
-client.on("messageCreate", (message) => {
-  if (message.channel.id === GLOBAL_CHAT_CHANNEL_ID && !message.author.bot) {
-    console.log("New message received, emitting to clients:", message.content);
-    io.emit("newMessage", {
-      username: message.author.username,
-      content: message.content,
+const config = {
+  client: {
+    id: CLIENT_ID,
+    secret: CLIENT_SECRET,
+  },
+  auth: {
+    tokenHost: "https://www.linkedin.com",
+    tokenPath: "/oauth/v2/accessToken",
+    authorizePath: "/oauth/v2/authorization",
+  },
+  options: {
+    authorizationMethod: "body", // Changed from header to body
+  },
+};
+
+const client = new AuthorizationCode(config);
+
+const generateState = () => crypto.randomBytes(16).toString("hex");
+
+app.get("/", (req, res) => {
+  const state = generateState();
+
+  const authorizationUri = client.authorizeURL({
+    redirect_uri: REDIRECT_URI,
+    scope: "w_member_social",
+    state: state,
+    response_type: "code", // Explicitly specify response type
+  });
+
+  res.send(`
+    <h2>LinkedIn OAuth2 Demo</h2>
+    <p><a href="${authorizationUri}">Log in with LinkedIn</a></p>
+  `);
+});
+
+app.get("/callback", async (req, res) => {
+  const { code, error, state } = req.query;
+
+  if (error) {
+    console.error("Authorization Error:", error);
+    return res.status(400).send(`<h3>Authorization Error</h3><p>${error}</p>`);
+  }
+
+  if (!code) {
+    return res.status(400).send("<h3>Missing authorization code</h3>");
+  }
+
+  try {
+    const tokenParams = {
+      code,
+      redirect_uri: REDIRECT_URI,
+      grant_type: "authorization_code", // Explicitly specify grant type
+    };
+
+    console.log("Attempting to exchange code for token with params:", {
+      ...tokenParams,
+      client_id: CLIENT_ID,
+      // Don't log client secret
     });
+
+    const accessToken = await client.getToken(tokenParams);
+
+    res.send("<h3>Authentication successful!</h3>");
+    console.log("Access Token obtained successfully");
+  } catch (error) {
+    console.error("Token Error Details:", {
+      message: error.message,
+      data: error.data,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+
+    const errorMessage =
+      error.response?.data?.error_description ||
+      error.data?.error_description ||
+      error.message ||
+      "Authentication failed";
+
+    res.status(500).send(`
+      <h3>Error</h3>
+      <p>${errorMessage}</p>
+      <pre>${JSON.stringify(error.response?.data || {}, null, 2)}</pre>
+    `);
   }
 });
 
-// Handle socket.io connections
-io.on("connection", (socket) => {
-  console.log("🟢 New Client Connected");
-
-  // Send chat history when user connects
-  fetchChatHistory(socket);
-
-  // Handle message sending from client
-  socket.on("sendMessage", async (data) => {
-    try {
-      const channel = await client.channels.fetch(GLOBAL_CHAT_CHANNEL_ID);
-      if (channel) {
-        await channel.send(`${data.username}: ${data.message}`);
-      }
-    } catch (error) {
-      console.error("Error sending message to Discord:", error);
-      socket.emit("error", "Failed to send the message to Discord.");
-    }
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔴 Client Disconnected");
-  });
-});
-
-// API Route for health check
-app.get("/", (req, res) => {
-  res.send("✅ Discord Global Chat Server is running!");
-});
-
-// Start Server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  await client.login(process.env.DISCORD_TOKEN);
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
