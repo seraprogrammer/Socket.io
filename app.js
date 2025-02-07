@@ -7,8 +7,8 @@ const app = express();
 
 const CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
 const CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
-const REDIRECT_URI =
-  process.env.LINKEDIN_REDIRECT_URI || "http://localhost:3000/callback";
+// Use full HTTPS URL for Railway
+const REDIRECT_URI = process.env.LINKEDIN_REDIRECT_URI || 'https://socketio-production-04a7.up.railway.app/callback';
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error("Missing CLIENT_ID or CLIENT_SECRET in .env file.");
@@ -26,23 +26,25 @@ const config = {
     authorizePath: "/oauth/v2/authorization",
   },
   options: {
-    authorizationMethod: "body", // Changed from header to body
-  },
+    authorizationMethod: 'body',
+  }
 };
 
 const client = new AuthorizationCode(config);
 
-const generateState = () => crypto.randomBytes(16).toString("hex");
+const generateState = () => crypto.randomBytes(16).toString('hex');
 
 app.get("/", (req, res) => {
   const state = generateState();
-
+  
   const authorizationUri = client.authorizeURL({
     redirect_uri: REDIRECT_URI,
     scope: "w_member_social",
     state: state,
-    response_type: "code", // Explicitly specify response type
+    response_type: 'code'
   });
+
+  console.log('Authorization URL:', authorizationUri); // Debug log
 
   res.send(`
     <h2>LinkedIn OAuth2 Demo</h2>
@@ -52,6 +54,8 @@ app.get("/", (req, res) => {
 
 app.get("/callback", async (req, res) => {
   const { code, error, state } = req.query;
+
+  console.log('Callback received:', { code, error, state }); // Debug log
 
   if (error) {
     console.error("Authorization Error:", error);
@@ -66,33 +70,31 @@ app.get("/callback", async (req, res) => {
     const tokenParams = {
       code,
       redirect_uri: REDIRECT_URI,
-      grant_type: "authorization_code", // Explicitly specify grant type
+      grant_type: 'authorization_code'
     };
 
-    console.log("Attempting to exchange code for token with params:", {
+    console.log('Token request params:', {
       ...tokenParams,
       client_id: CLIENT_ID,
-      // Don't log client secret
     });
 
     const accessToken = await client.getToken(tokenParams);
-
-    res.send("<h3>Authentication successful!</h3>");
+    
+    res.send('<h3>Authentication successful!</h3>');
     console.log("Access Token obtained successfully");
   } catch (error) {
     console.error("Token Error Details:", {
       message: error.message,
       data: error.data,
       response: error.response?.data,
-      status: error.response?.status,
+      status: error.response?.status
     });
 
-    const errorMessage =
-      error.response?.data?.error_description ||
-      error.data?.error_description ||
-      error.message ||
-      "Authentication failed";
-
+    const errorMessage = error.response?.data?.error_description || 
+                        error.data?.error_description || 
+                        error.message || 
+                        "Authentication failed";
+                        
     res.status(500).send(`
       <h3>Error</h3>
       <p>${errorMessage}</p>
@@ -103,5 +105,6 @@ app.get("/callback", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Redirect URI: ${REDIRECT_URI}`);
 });
